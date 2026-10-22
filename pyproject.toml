@@ -1,0 +1,62 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "dataone"
+version = "0.1.0"
+description = "Download Dukascopy candles to HDF5 and build quality-checked hourly datasets"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "PolyForm-Noncommercial-1.0.0"
+authors = [{ name = "Marco" }]
+keywords = ["dukascopy", "forex", "market-data", "hdf5", "quantitative-finance"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Financial and Insurance Industry",
+  "License :: Other/Proprietary License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Office/Business :: Financial :: Investment",
+]
+dependencies = [
+  "numpy>=1.26",
+  "pandas>=2.2",
+  "tables>=3.9",
+  "tqdm>=4.66",
+]
+
+[project.optional-dependencies]
+plots = [
+  "matplotlib>=3.9",
+]
+dev = [
+  "build>=1.2",
+  "h5py>=3.11",
+  "matplotlib>=3.9",
+  "mplfinance>=0.12.10b0",
+  "pytest>=8.0",
+  "twine>=5.0",
+]
+
+[project.scripts]
+dataone = "dataone.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["dataone"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "/dataone",
+  "/LICENSE",
+  "/README.md",
+  "/pyproject.toml",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+

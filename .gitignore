@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+.venv/
+build/
+dist/
+*.egg-info/
+tempdownload/
+*.csv
+
+# Large generated market-data files are local by default.
+*.h5
+*.hdf5
+
