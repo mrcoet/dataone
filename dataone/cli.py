@@ -33,6 +33,12 @@ def _parser() -> argparse.ArgumentParser:
     download.add_argument("--retries", type=int, default=5)
     download.add_argument("--batch-size", type=int, default=10)
     download.add_argument(
+        "--chunk-days",
+        type=int,
+        default=365,
+        help="days per HDF5 checkpoint (default: 365)",
+    )
+    download.add_argument(
         "--no-progress", action="store_true", help="disable the download progress bar"
     )
     download.add_argument(
@@ -93,6 +99,7 @@ def main(argv: list[str] | None = None) -> int:
                 args.output,
                 retries=args.retries,
                 batch_size=args.batch_size,
+                chunk_days=args.chunk_days,
                 timeout=args.timeout,
                 progress=not args.no_progress,
             )

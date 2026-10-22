@@ -5,7 +5,7 @@
 - `UnsupportedSymbolError`: use `list_symbols(search)` or `dataone symbols <term>`. Display forms such as `EUR/USD` normalize, but unsupported normalized ids still fail.
 - Date errors: require exact `YYYY-MM-DD` or `datetime.date`; reject timestamps, compact dates, locale dates, impossible dates, and `datetime.datetime`.
 - `from_date must be earlier than to_date`: intervals cannot be empty or reversed.
-- Option validation: `missing_percentage` must be 0 through 100; `retries >= 0`; `batch_size >= 1`; `timeout > 0` unless it is `None`; report `dpi > 0`.
+- Option validation: `missing_percentage` must be 0 through 100; `retries >= 0`; `batch_size >= 1`; `chunk_days >= 1`; `timeout > 0` unless it is `None`; report `dpi > 0`.
 
 ## Download failures
 
@@ -13,7 +13,7 @@
 - Backend timeout/failure: the exception is `DownloadError` and includes symbol, side, range, and backend detail where available. `timeout` applies separately to each BID/ASK subprocess call.
 - Browser/WAF challenge: install the pinned browser runtime with `npx dukascopy-node@1.51.0 --install-browser`, then retry.
 - Missing or malformed backend CSV: DataOne requires all six M1 columns and numeric values.
-- A failed range is not an atomic two-side transaction at the process level, but HDF5 writing happens only after both BID and ASK downloads for that range validate. Earlier ranges from a multi-range update may already have been saved if a later range fails.
+- A failed chunk is not an atomic two-side transaction at the process level, but HDF5 writing happens only after both BID and ASK downloads for that chunk validate. Earlier chunks remain saved and the same command resumes from their coverage boundary.
 
 Do not report the progress bar as network transfer progress. It counts validated stages, writes to stderr, and should not reach “Complete” after a failed stage.
 

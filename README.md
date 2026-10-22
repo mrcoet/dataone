@@ -91,6 +91,7 @@ download = download_h5(
     from_date="2020-01-01",
     to_date="2025-01-01",  # exclusive
     output="data/eurusd.h5",
+    chunk_days=365,          # save a resumable checkpoint after each chunk
 )
 print(download.path, download.rows_bid, download.rows_ask)
 
@@ -105,7 +106,10 @@ print(csv_path)
 When `output` is omitted, DataOne uses `./duka/<symbol>.h5` in the current
 project. It creates the `duka` directory when necessary. On later calls it reads
 the HDF5 coverage metadata and downloads only a missing prefix or suffix; when
-the requested interval is already covered, it makes no Dukascopy request.
+the requested interval is already covered, it makes no Dukascopy request. Long
+downloads are split into 365-day chunks by default. Each chunk is written after
+both BID and ASK complete, so rerunning an interrupted command resumes from the
+last saved coverage boundary. Set `chunk_days` to control checkpoint frequency.
 
 Work directly with pandas instead of writing a CSV:
 
@@ -183,18 +187,20 @@ holiday calendar.
 ## Command line
 
 ```bash
-dataone download eurusd --from 2020-01-01 --to 2025-01-01 -o data/eurusd.h5
+dataone download eurusd --from 2020-01-01 --to 2025-01-01 -o data/eurusd.h5 --chunk-days 365
 dataone h1 data/eurusd.h5 -o data/eurusd_h1.csv --market fx
 dataone eda data/eurusd.h5 -o reports/eurusd --market fx
 ```
 
 The date interval is half-open: `--from` is included and `--to` is excluded.
+DataOne includes volume and Dukascopy's flat candles.
 Downloads show a tqdm progress bar by default in both Python and the CLI. The
 bar advances after each validated BID/ASK download and HDF5 write, and displays
 the active side and date range. It measures completed stages, not bytes or
-individual candles inside the backend request. Fully covered files produce no
-download bar. Disable it with `download_h5(..., progress=False)` or
-`dataone download ... --no-progress`.
+individual candles inside the backend request. The HDF5 write at the end of
+each chunk is a resumable checkpoint. Fully covered files produce no download
+bar. Disable it with `download_h5(..., progress=False)` or `dataone download
+... --no-progress`.
 
 Use `dataone --help`, `dataone download --help`, `dataone h1 --help`, or
 `dataone eda --help` for all options. Use `--holiday "Christmas Day"` to select

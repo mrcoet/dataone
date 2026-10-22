@@ -8,7 +8,7 @@
 - `symbol`: normalized Dukascopy id.
 - `from_date`, `to_date`: final total stored coverage, not necessarily only the requested interval.
 - `rows_bid`, `rows_ask`: rows fetched during this call, not total rows already stored.
-- `downloaded_ranges`: missing half-open date ranges requested during this call.
+- `downloaded_ranges`: half-open backend chunks requested during this call. Their maximum size is controlled by `chunk_days`.
 
 For a fully covered request, `downloaded_ranges == ()` and both row counters are zero. That means no new download was needed; it does not mean the HDF5 tables are empty.
 

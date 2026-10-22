@@ -8,7 +8,7 @@ import subprocess
 import tempfile
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -81,6 +81,29 @@ def _missing_ranges(
     if requested_to > stored_to:
         ranges.append((stored_to, requested_to))
     return ranges
+
+
+def _chunk_ranges(
+    ranges: Iterable[tuple[date, date]],
+    coverage: tuple[date, date] | None,
+    chunk_days: int,
+) -> list[tuple[date, date]]:
+    chunks: list[tuple[date, date]] = []
+    step = timedelta(days=chunk_days)
+    for range_start, range_end in ranges:
+        range_chunks: list[tuple[date, date]] = []
+        chunk_start = range_start
+        while chunk_start < range_end:
+            chunk_end = min(chunk_start + step, range_end)
+            range_chunks.append((chunk_start, chunk_end))
+            chunk_start = chunk_end
+
+        # A missing prefix must grow backward from the stored boundary. This
+        # keeps coverage continuous if the process stops between checkpoints.
+        if coverage is not None and range_end == coverage[0]:
+            range_chunks.reverse()
+        chunks.extend(range_chunks)
+    return chunks
 
 
 def _download_csv(
@@ -252,13 +275,16 @@ def download_h5(
     dukascopy_node_version: str = "1.51.0",
     retries: int = 5,
     batch_size: int = 10,
+    chunk_days: int = 365,
     timeout: float | None = 900,
     progress: bool = True,
 ) -> DownloadResult:
     """Download one-minute BID and ASK candles into a DataOne HDF5 file.
 
     Dates describe a half-open interval: ``from_date <= timestamp < to_date``.
-    Calling the function again safely extends the stored coverage.
+    Calling the function again safely extends the stored coverage. Downloads
+    are committed after each ``chunk_days`` interval, so an interrupted call
+    can resume from the last completed checkpoint.
     Progress shows validated BID/ASK downloads and HDF5 writes as completed
     stages. Set ``progress=False`` to suppress the progress bar.
     """
@@ -268,14 +294,23 @@ def download_h5(
     end = _as_date(to_date, "to_date")
     if start >= end:
         raise ValueError("from_date must be earlier than to_date")
-    if retries < 0 or batch_size < 1 or (timeout is not None and timeout <= 0):
-        raise ValueError("retries must be >= 0, batch_size >= 1, and timeout > 0")
+    if (
+        retries < 0
+        or batch_size < 1
+        or chunk_days < 1
+        or (timeout is not None and timeout <= 0)
+    ):
+        raise ValueError(
+            "retries must be >= 0, batch_size >= 1, chunk_days >= 1, "
+            "and timeout > 0"
+        )
     target = (
         Path(output) if output is not None else Path("duka") / f"{normalised_symbol}.h5"
     )
     target = target.expanduser()
     coverage = _stored_coverage(target)
     ranges = _missing_ranges(start, end, coverage)
+    chunks = _chunk_ranges(ranges, coverage, chunk_days)
     if ranges and shutil.which(npx) is None:
         raise DownloadError(
             "npx was not found. Install Node.js 18+ to use DataOne downloads; "
@@ -284,13 +319,13 @@ def download_h5(
 
     rows = {"bid": 0, "ask": 0}
     with tqdm(
-        total=len(ranges) * 3,
+        total=len(chunks) * 3,
         desc=f"{normalised_symbol.upper()} download",
         unit="stage",
-        disable=not progress or not ranges,
+        disable=not progress or not chunks,
         dynamic_ncols=True,
     ) as bar:
-        for range_start, range_end in ranges:
+        for range_start, range_end in chunks:
             with tempfile.TemporaryDirectory(prefix="dataone-") as tmp:
                 temp_path = Path(tmp)
                 downloaded: list[tuple[str, pd.DataFrame]] = []
@@ -326,7 +361,7 @@ def download_h5(
                 )
                 coverage = (current_from, current_to)
                 bar.update(1)
-        if ranges:
+        if chunks:
             bar.set_postfix_str("Complete")
 
     final_from, final_to = coverage if coverage else (start, end)
@@ -337,5 +372,5 @@ def download_h5(
         to_date=final_to,
         rows_bid=rows["bid"],
         rows_ask=rows["ask"],
-        downloaded_ranges=tuple(ranges),
+        downloaded_ranges=tuple(chunks),
     )

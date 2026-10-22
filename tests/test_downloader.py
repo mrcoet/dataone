@@ -114,6 +114,11 @@ def test_download_accepts_date_objects_and_rejects_reversed_range(
     with pytest.raises(ValueError, match="earlier than"):
         downloader.download_h5("eurusd", "2024-01-02", "2024-01-01")
 
+    with pytest.raises(ValueError, match="chunk_days >= 1"):
+        downloader.download_h5(
+            "eurusd", "2024-01-01", "2024-01-02", chunk_days=0
+        )
+
 
 def test_unsupported_symbol_fails_before_filesystem_or_network(
     monkeypatch, tmp_path: Path
@@ -201,6 +206,7 @@ def test_download_csv_tolerates_empty_backend_artifacts(
 
     assert "--retry-on-empty" in command
     assert "--no-fail-after-retries" in command
+    assert "--flats" in command
     assert frame.empty
     assert tuple(frame.columns) == downloader.REQUIRED_COLUMNS
 
@@ -239,6 +245,119 @@ def test_empty_range_creates_readable_h5_and_can_later_be_extended(
     assert pd.read_hdf(target, "m1/bid").shape == (3, 6)
 
 
+def test_download_checkpoints_chunks_and_resumes_after_failure(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(downloader.shutil, "which", lambda _: "/usr/bin/npx")
+    target = tmp_path / "gbpcad.h5"
+    calls: list[tuple[str, date, date]] = []
+
+    def interrupted(symbol, side, start, end, destination, **kwargs):
+        calls.append((side, start, end))
+        if start == date(2024, 1, 3):
+            raise downloader.DownloadError("interrupted")
+        return _frame(start.isoformat())
+
+    monkeypatch.setattr(downloader, "_download_csv", interrupted)
+    with pytest.raises(downloader.DownloadError, match="interrupted"):
+        downloader.download_h5(
+            "gbpcad",
+            "2024-01-01",
+            "2024-01-05",
+            target,
+            chunk_days=2,
+            progress=False,
+        )
+
+    assert downloader._stored_coverage(target) == (
+        date(2024, 1, 1),
+        date(2024, 1, 3),
+    )
+    assert pd.read_hdf(target, "m1/bid").shape == (3, 6)
+    assert calls == [
+        ("bid", date(2024, 1, 1), date(2024, 1, 3)),
+        ("ask", date(2024, 1, 1), date(2024, 1, 3)),
+        ("bid", date(2024, 1, 3), date(2024, 1, 5)),
+    ]
+
+    calls.clear()
+    monkeypatch.setattr(
+        downloader,
+        "_download_csv",
+        lambda symbol, side, start, end, destination, **kwargs: (
+            calls.append((side, start, end)) or _frame(start.isoformat())
+        ),
+    )
+    resumed = downloader.download_h5(
+        "gbpcad",
+        "2024-01-01",
+        "2024-01-05",
+        target,
+        chunk_days=2,
+        progress=False,
+    )
+
+    assert resumed.downloaded_ranges == ((date(2024, 1, 3), date(2024, 1, 5)),)
+    assert calls == [
+        ("bid", date(2024, 1, 3), date(2024, 1, 5)),
+        ("ask", date(2024, 1, 3), date(2024, 1, 5)),
+    ]
+    assert downloader._stored_coverage(target) == (
+        date(2024, 1, 1),
+        date(2024, 1, 5),
+    )
+
+
+def test_prefix_checkpoints_grow_backward_without_coverage_gaps(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(downloader.shutil, "which", lambda _: "/usr/bin/npx")
+    monkeypatch.setattr(
+        downloader,
+        "_download_csv",
+        lambda symbol, side, start, end, destination, **kwargs: _frame(
+            start.isoformat()
+        ),
+    )
+    target = tmp_path / "gbpcad.h5"
+    downloader.download_h5(
+        "gbpcad",
+        "2024-01-05",
+        "2024-01-07",
+        target,
+        chunk_days=2,
+        progress=False,
+    )
+
+    calls: list[tuple[str, date, date]] = []
+
+    def interrupt_second_chunk(symbol, side, start, end, destination, **kwargs):
+        calls.append((side, start, end))
+        if start == date(2024, 1, 1):
+            raise downloader.DownloadError("interrupted")
+        return _frame(start.isoformat())
+
+    monkeypatch.setattr(downloader, "_download_csv", interrupt_second_chunk)
+    with pytest.raises(downloader.DownloadError, match="interrupted"):
+        downloader.download_h5(
+            "gbpcad",
+            "2024-01-01",
+            "2024-01-07",
+            target,
+            chunk_days=2,
+            progress=False,
+        )
+
+    assert calls[:2] == [
+        ("bid", date(2024, 1, 3), date(2024, 1, 5)),
+        ("ask", date(2024, 1, 3), date(2024, 1, 5)),
+    ]
+    assert downloader._stored_coverage(target) == (
+        date(2024, 1, 3),
+        date(2024, 1, 7),
+    )
+
+
 @pytest.mark.parametrize(
     "extra_args, expected", [([], True), (["--no-progress"], False)]
 )
@@ -247,6 +366,7 @@ def test_cli_passes_progress_option(monkeypatch, extra_args, expected) -> None:
 
     def fake_download(*args, **kwargs):
         assert kwargs["progress"] is expected
+        assert kwargs["chunk_days"] == 30
         return downloader.DownloadResult(
             Path("eurusd.h5"), "eurusd", date(2024, 1, 1), date(2024, 1, 2), 3, 3, ()
         )
@@ -261,6 +381,8 @@ def test_cli_passes_progress_option(monkeypatch, extra_args, expected) -> None:
                 "2024-01-01",
                 "--to",
                 "2024-01-02",
+                "--chunk-days",
+                "30",
                 *extra_args,
             ]
         )

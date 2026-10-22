@@ -44,6 +44,7 @@ result = download_h5(
     output="data/eurusd.h5",    # default: ./duka/eurusd.h5
     retries=5,
     batch_size=10,
+    chunk_days=365,             # persist after each chunk for safe resume
     timeout=900,                 # seconds per BID or ASK backend call; None disables it
     progress=True,
 )
@@ -55,11 +56,14 @@ Equivalent CLI:
 dataone download eurusd --from 2024-01-01 --to 2025-01-01 -o data/eurusd.h5
 ```
 
-Useful options are `--retries`, `--batch-size`, `--timeout`, and `--no-progress`. The default progress bar measures three completed stages per missing interval: validated BID download, validated ASK download, and HDF5 write. It does not show bytes or individual candles.
+Useful options are `--retries`, `--batch-size`, `--chunk-days`, `--timeout`, and `--no-progress`. The default progress bar measures three completed stages per chunk: validated BID download, validated ASK download, and HDF5 checkpoint write. It does not show bytes or individual candles.
+
+Downloads include volume and Dukascopy's flat candles.
 
 Incremental behavior:
 
 - A new file downloads the requested range.
+- Missing ranges are split into 365-day chunks by default. Each completed BID/ASK chunk is immediately persisted; rerunning after interruption resumes from the stored coverage boundary. Set `chunk_days` or `--chunk-days` to change the checkpoint size.
 - An existing file with valid coverage metadata downloads only an uncovered prefix, suffix, or both.
 - A fully covered request makes no backend request and shows no progress bar.
 - New rows are appended. Reading later sorts timestamps and keeps the last duplicate timestamp per side.
