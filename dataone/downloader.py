@@ -116,6 +116,7 @@ def _download_csv(
     npx: str,
     package_version: str,
     retries: int,
+    retry_pause: int,
     batch_size: int,
     timeout: float | None,
 ) -> pd.DataFrame:
@@ -150,6 +151,8 @@ def _download_csv(
         str(batch_size),
         "--retries",
         str(retries),
+        "--retry-pause",
+        str(retry_pause),
         "--retry-on-empty",
         "--no-fail-after-retries",
     ]
@@ -202,6 +205,26 @@ def _download_csv(
     for column in REQUIRED_COLUMNS[1:]:
         frame[column] = pd.to_numeric(frame[column], errors="raise")
     return frame.drop_duplicates("timestamp", keep="last").sort_values("timestamp")
+
+
+def _add_null_candles(frame: pd.DataFrame, start: date, end: date) -> pd.DataFrame:
+    """Represent every absent M1 timestamp with a null OHLCV candle."""
+
+    expected = pd.date_range(start, end, freq="min", inclusive="left", tz="UTC")
+    expected_ms = expected.as_unit("ms").asi8
+    result = (
+        frame.drop_duplicates("timestamp", keep="last")
+        .set_index("timestamp")
+        .reindex(expected_ms)
+        .rename_axis("timestamp")
+        .reset_index()
+    )
+    result["timestamp"] = result["timestamp"].astype("int64")
+    for column in REQUIRED_COLUMNS[1:]:
+        result[column] = pd.to_numeric(result[column], errors="coerce").astype(
+            "float64"
+        )
+    return result.loc[:, REQUIRED_COLUMNS]
 
 
 def _write_frames(
@@ -273,7 +296,8 @@ def download_h5(
     *,
     npx: str = "npx",
     dukascopy_node_version: str = "1.51.0",
-    retries: int = 5,
+    retries: int = 20,
+    retry_pause: int = 2000,
     batch_size: int = 10,
     chunk_days: int = 365,
     timeout: float | None = 900,
@@ -296,13 +320,14 @@ def download_h5(
         raise ValueError("from_date must be earlier than to_date")
     if (
         retries < 0
+        or retry_pause < 0
         or batch_size < 1
         or chunk_days < 1
         or (timeout is not None and timeout <= 0)
     ):
         raise ValueError(
-            "retries must be >= 0, batch_size >= 1, chunk_days >= 1, "
-            "and timeout > 0"
+            "retries and retry_pause must be >= 0, batch_size and chunk_days "
+            "must be >= 1, and timeout must be > 0"
         )
     target = (
         Path(output) if output is not None else Path("duka") / f"{normalised_symbol}.h5"
@@ -340,9 +365,11 @@ def download_h5(
                         npx=npx,
                         package_version=dukascopy_node_version,
                         retries=retries,
+                        retry_pause=retry_pause,
                         batch_size=batch_size,
                         timeout=timeout,
                     )
+                    frame = _add_null_candles(frame, range_start, range_end)
                     rows[side] += len(frame)
                     downloaded.append((side, frame))
                     bar.update(1)

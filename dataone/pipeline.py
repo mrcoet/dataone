@@ -67,6 +67,7 @@ def read_h5(path: str | Path) -> tuple[pd.DataFrame, pd.DataFrame]:
 
 def _quality_side(frame: pd.DataFrame) -> pd.DataFrame:
     result = frame.copy()
+    result["null_candle"] = result[OHLCV].isna().any(axis=1)
     stale = (
         result["open"].shift().eq(result["open"])
         & result["high"].shift().eq(result["high"])
@@ -107,6 +108,7 @@ def _minutes(path: Path) -> pd.DataFrame:
             minute[f"bad_volume_{side}"]
             | minute[f"stale_{side}"]
             | minute[f"bad_logic_{side}"]
+            | minute[f"null_candle_{side}"]
         )
     minute["total_missing"] = minute["missing_ask"] | minute["missing_bid"]
     minute["total_bad_volume"] = minute["bad_volume_ask"] | minute["bad_volume_bid"]

@@ -91,6 +91,8 @@ download = download_h5(
     from_date="2020-01-01",
     to_date="2025-01-01",  # exclusive
     output="data/eurusd.h5",
+    retries=20,
+    retry_pause=2000,
     chunk_days=365,          # save a resumable checkpoint after each chunk
 )
 print(download.path, download.rows_bid, download.rows_ask)
@@ -193,7 +195,10 @@ dataone eda data/eurusd.h5 -o reports/eurusd --market fx
 ```
 
 The date interval is half-open: `--from` is included and `--to` is excluded.
-DataOne includes volume and Dukascopy's flat candles.
+DataOne includes flat candles and volume in millions. The default backend
+policy retries empty/failed daily artifacts 20 times with a 2,000 ms pause and
+continues after exhaustion. Every absent M1 timestamp is stored with null OHLCV
+values, so missing candles and wholly absent days remain explicit.
 Downloads show a tqdm progress bar by default in both Python and the CLI. The
 bar advances after each validated BID/ASK download and HDF5 write, and displays
 the active side and date range. It measures completed stages, not bytes or

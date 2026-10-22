@@ -42,7 +42,8 @@ result = download_h5(
     from_date="2024-01-01",
     to_date="2025-01-01",       # exclusive
     output="data/eurusd.h5",    # default: ./duka/eurusd.h5
-    retries=5,
+    retries=20,
+    retry_pause=2000,           # milliseconds between retries
     batch_size=10,
     chunk_days=365,             # persist after each chunk for safe resume
     timeout=900,                 # seconds per BID or ASK backend call; None disables it
@@ -56,9 +57,9 @@ Equivalent CLI:
 dataone download eurusd --from 2024-01-01 --to 2025-01-01 -o data/eurusd.h5
 ```
 
-Useful options are `--retries`, `--batch-size`, `--chunk-days`, `--timeout`, and `--no-progress`. The default progress bar measures three completed stages per chunk: validated BID download, validated ASK download, and HDF5 checkpoint write. It does not show bytes or individual candles.
+Useful options are `--retries`, `--retry-pause`, `--batch-size`, `--chunk-days`, `--timeout`, and `--no-progress`. The default progress bar measures three completed stages per chunk: validated BID download, validated ASK download, and HDF5 checkpoint write. It does not show bytes or individual candles.
 
-Downloads include volume and Dukascopy's flat candles.
+Downloads include Dukascopy flat candles and volume in millions. Empty daily artifacts are retried 20 times by default with a 2,000 ms pause, then accepted by `no-fail-after-retries`. Every absent M1 timestamp is represented by a row with null OHLCV values.
 
 Incremental behavior:
 

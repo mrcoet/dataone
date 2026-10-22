@@ -27,3 +27,26 @@ def test_build_h1_can_skip_final_cleaning(complete_fx_h5: Path) -> None:
     frame = build_h1(complete_fx_h5, H1Options(market="fx", clean=False))
     assert "group" not in frame
     assert frame.index.name == "utc_date"
+
+
+def test_null_candles_are_counted_as_missing(complete_fx_h5: Path) -> None:
+    missing_hour = pd.Timestamp("2024-01-07 22:00:00", tz="UTC")
+    for side in ("bid", "ask"):
+        key = f"m1/{side}"
+        frame = pd.read_hdf(complete_fx_h5, key)
+        timestamps = pd.to_datetime(frame["timestamp"], unit="ms", utc=True)
+        mask = timestamps.between(
+            missing_hour, missing_hour + pd.Timedelta(minutes=59)
+        )
+        frame.loc[mask, ["open", "high", "low", "close", "volume"]] = float(
+            "nan"
+        )
+        frame.to_hdf(
+            complete_fx_h5, key=key, mode="a", format="table", index=False
+        )
+
+    result = build_h1(complete_fx_h5, H1Options(market="fx", clean=False))
+    hour = result.loc[missing_hour]
+    assert hour["missing_bid"] == 60
+    assert hour["missing_ask"] == 60
+    assert hour["total_missing"] == 60

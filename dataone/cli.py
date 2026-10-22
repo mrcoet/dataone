@@ -30,7 +30,13 @@ def _parser() -> argparse.ArgumentParser:
         "--to", dest="to_date", required=True, help="exclusive YYYY-MM-DD"
     )
     download.add_argument("-o", "--output", type=Path, help="output .h5 path")
-    download.add_argument("--retries", type=int, default=5)
+    download.add_argument("--retries", type=int, default=20)
+    download.add_argument(
+        "--retry-pause",
+        type=int,
+        default=2000,
+        help="milliseconds between retries (default: 2000)",
+    )
     download.add_argument("--batch-size", type=int, default=10)
     download.add_argument(
         "--chunk-days",
@@ -98,6 +104,7 @@ def main(argv: list[str] | None = None) -> int:
                 args.to_date,
                 args.output,
                 retries=args.retries,
+                retry_pause=args.retry_pause,
                 batch_size=args.batch_size,
                 chunk_days=args.chunk_days,
                 timeout=args.timeout,

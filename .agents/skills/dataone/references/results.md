@@ -7,7 +7,7 @@
 - `path`: absolute HDF5 `Path`.
 - `symbol`: normalized Dukascopy id.
 - `from_date`, `to_date`: final total stored coverage, not necessarily only the requested interval.
-- `rows_bid`, `rows_ask`: rows fetched during this call, not total rows already stored.
+- `rows_bid`, `rows_ask`: rows written during this call, including null placeholders for absent M1 timestamps; these are not total rows already stored.
 - `downloaded_ranges`: half-open backend chunks requested during this call. Their maximum size is controlled by `chunk_days`.
 
 For a fully covered request, `downloaded_ranges == ()` and both row counters are zero. That means no new download was needed; it does not mean the HDF5 tables are empty.
@@ -22,6 +22,8 @@ Keys:
 ```
 
 Each table has exactly the working columns `timestamp`, `open`, `high`, `low`, `close`, `volume`. Stored timestamps are Unix milliseconds for DataOne-created files. `read_h5()` also accepts parseable nonnumeric timestamp columns and normalizes either representation to UTC.
+
+For every absent M1 timestamp, DataOne writes a row whose timestamp is populated and whose OHLCV values are null. These rows preserve the absence explicitly and are counted as missing by H1 quality metrics; they are not flat candles.
 
 The BID table drives the minute-level join. ASK is left-joined on timestamp; missing ASK values remain absent and flow into hourly aggregates. The implementation does not create an outer union from ASK-only timestamps.
 

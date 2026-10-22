@@ -38,7 +38,7 @@ def test_download_h5_uses_public_incremental_api(monkeypatch, tmp_path: Path) ->
 
     assert result.path == target.resolve()
     assert calls == [("eurusd", "bid"), ("eurusd", "ask")]
-    assert pd.read_hdf(target, "m1/bid").shape == (3, 6)
+    assert pd.read_hdf(target, "m1/bid").shape == (1440, 6)
 
     calls.clear()
     second = downloader.download_h5("eurusd", "2024-01-01", "2024-01-02", target)
@@ -114,7 +114,7 @@ def test_download_accepts_date_objects_and_rejects_reversed_range(
     with pytest.raises(ValueError, match="earlier than"):
         downloader.download_h5("eurusd", "2024-01-02", "2024-01-01")
 
-    with pytest.raises(ValueError, match="chunk_days >= 1"):
+    with pytest.raises(ValueError, match="chunk_days must be >= 1"):
         downloader.download_h5(
             "eurusd", "2024-01-01", "2024-01-02", chunk_days=0
         )
@@ -200,15 +200,28 @@ def test_download_csv_tolerates_empty_backend_artifacts(
         npx="npx",
         package_version="1.51.0",
         retries=0,
+        retry_pause=2000,
         batch_size=10,
         timeout=30,
     )
 
     assert "--retry-on-empty" in command
     assert "--no-fail-after-retries" in command
+    assert command[command.index("--retry-pause") + 1] == "2000"
     assert "--flats" in command
     assert frame.empty
     assert tuple(frame.columns) == downloader.REQUIRED_COLUMNS
+
+
+def test_absent_minutes_become_null_candles() -> None:
+    frame = downloader._add_null_candles(
+        _frame("2024-01-01"), date(2024, 1, 1), date(2024, 1, 2)
+    )
+
+    assert len(frame) == 1440
+    assert frame["timestamp"].is_monotonic_increasing
+    assert frame.iloc[:3][list(downloader.REQUIRED_COLUMNS[1:])].notna().all().all()
+    assert frame.iloc[3:][list(downloader.REQUIRED_COLUMNS[1:])].isna().all().all()
 
 
 def test_empty_range_creates_readable_h5_and_can_later_be_extended(
@@ -228,8 +241,10 @@ def test_empty_range_creates_readable_h5_and_can_later_be_extended(
         "gbpcad", "2010-01-02", "2010-01-03", target, progress=False
     )
     bid, ask = pd.read_hdf(target, "m1/bid"), pd.read_hdf(target, "m1/ask")
-    assert empty.rows_bid == empty.rows_ask == 0
-    assert bid.empty and ask.empty
+    assert empty.rows_bid == empty.rows_ask == 1440
+    assert len(bid) == len(ask) == 1440
+    assert bid[list(downloader.REQUIRED_COLUMNS[1:])].isna().all().all()
+    assert ask[list(downloader.REQUIRED_COLUMNS[1:])].isna().all().all()
 
     monkeypatch.setattr(
         downloader,
@@ -241,8 +256,8 @@ def test_empty_range_creates_readable_h5_and_can_later_be_extended(
     extended = downloader.download_h5(
         "gbpcad", "2010-01-02", "2010-01-04", target, progress=False
     )
-    assert extended.rows_bid == extended.rows_ask == 3
-    assert pd.read_hdf(target, "m1/bid").shape == (3, 6)
+    assert extended.rows_bid == extended.rows_ask == 1440
+    assert pd.read_hdf(target, "m1/bid").shape == (2880, 6)
 
 
 def test_download_checkpoints_chunks_and_resumes_after_failure(
@@ -273,7 +288,7 @@ def test_download_checkpoints_chunks_and_resumes_after_failure(
         date(2024, 1, 1),
         date(2024, 1, 3),
     )
-    assert pd.read_hdf(target, "m1/bid").shape == (3, 6)
+    assert pd.read_hdf(target, "m1/bid").shape == (2880, 6)
     assert calls == [
         ("bid", date(2024, 1, 1), date(2024, 1, 3)),
         ("ask", date(2024, 1, 1), date(2024, 1, 3)),
@@ -367,6 +382,8 @@ def test_cli_passes_progress_option(monkeypatch, extra_args, expected) -> None:
     def fake_download(*args, **kwargs):
         assert kwargs["progress"] is expected
         assert kwargs["chunk_days"] == 30
+        assert kwargs["retries"] == 20
+        assert kwargs["retry_pause"] == 2000
         return downloader.DownloadResult(
             Path("eurusd.h5"), "eurusd", date(2024, 1, 1), date(2024, 1, 2), 3, 3, ()
         )
