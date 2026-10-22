@@ -68,8 +68,8 @@ uv add "dataone[plots]"
 From a GitHub checkout during development:
 
 ```bash
-python -m pip install git+https://github.com/YOUR_ACCOUNT/dataone.git
-uv add git+https://github.com/YOUR_ACCOUNT/dataone.git
+python -m pip install git+https://github.com/mrcoet/dataone.git
+uv add git+https://github.com/mrcoet/dataone.git
 ```
 
 ## Use from Python
@@ -244,8 +244,7 @@ incremental download behavior without depending on the legacy source tree.
 
 GitHub Actions runs the tests and package build on supported Python versions.
 The release workflow builds and publishes to PyPI using Trusted Publishing when
-a GitHub release is published. Before releasing, configure a PyPI Trusted
-Publisher for the repository and replace `YOUR_ACCOUNT` in this README.
+a GitHub release is published.
 
 ## Supported Dukascopy symbols
 
