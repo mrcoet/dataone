@@ -72,6 +72,13 @@ python -m pip install git+https://github.com/mrcoet/dataone.git
 uv add git+https://github.com/mrcoet/dataone.git
 ```
 
+## Codex skill
+
+This repository includes a project skill at `.agents/skills/dataone`. Codex
+discovers it automatically when working in the checkout. Invoke it explicitly
+with `$dataone`, or ask Codex to download, transform, inspect, or explain
+DataOne datasets and reports.
+
 ## Use from Python
 
 Download or incrementally update a symbol, then create `h1.csv`:

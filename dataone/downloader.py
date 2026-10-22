@@ -128,6 +128,7 @@ def _download_csv(
         "--retries",
         str(retries),
         "--retry-on-empty",
+        "--no-fail-after-retries",
     ]
     try:
         completed = subprocess.run(
@@ -157,7 +158,17 @@ def _download_csv(
             )
         csv_path = candidates[0]
 
-    frame = pd.read_csv(csv_path)
+    try:
+        frame = pd.read_csv(csv_path)
+    except pd.errors.EmptyDataError:
+        return pd.DataFrame(
+            {
+                column: pd.Series(
+                    dtype="int64" if column == "timestamp" else "float64"
+                )
+                for column in REQUIRED_COLUMNS
+            }
+        )
     missing = set(REQUIRED_COLUMNS).difference(frame.columns)
     if missing:
         raise DownloadError(f"downloaded CSV is missing columns: {sorted(missing)}")
@@ -180,12 +191,40 @@ def _write_frames(
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     for side, frame in frames:
+        key = f"m1/{side}"
+        stored_keys = _keys(path) if path.exists() else set()
+        stored_key = f"/{key}"
+
+        if frame.empty:
+            # pandas does not create a table-format key for an empty frame. A
+            # fixed-format placeholder keeps a weekend-only download readable;
+            # it is replaced with a table when candles arrive later.
+            if stored_key not in stored_keys:
+                frame.to_hdf(
+                    path,
+                    key=key,
+                    mode="a" if path.exists() else "w",
+                    format="fixed",
+                    index=False,
+                )
+            continue
+
+        append = stored_key in stored_keys
+        if append:
+            with pd.HDFStore(path, mode="r") as store:
+                is_table = store.get_storer(key).is_table
+            if not is_table:
+                existing = pd.read_hdf(path, key=key)
+                if not existing.empty:
+                    frame = pd.concat([existing, frame], ignore_index=True)
+                append = False
+
         frame.to_hdf(
             path,
-            key=f"m1/{side}",
+            key=key,
             mode="a" if path.exists() else "w",
             format="table",
-            append=path.exists() and f"/m1/{side}" in _keys(path),
+            append=append,
             index=False,
         )
 

@@ -1,0 +1,5 @@
+interface:
+  display_name: "DataOne"
+  short_description: "Use and explain DataOne market-data workflows"
+  default_prompt: "Use $dataone to download or analyze Dukascopy data and explain the resulting artifacts and quality metrics."
+

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from pathlib import Path
+from subprocess import CompletedProcess
 
 import pandas as pd
 import pytest
@@ -171,6 +172,71 @@ def test_failed_download_does_not_display_complete_progress(
             "eurusd", "2024-01-01", "2024-01-02", tmp_path / "eurusd.h5"
         )
     assert "100%" not in capsys.readouterr().err
+
+
+def test_download_csv_tolerates_empty_backend_artifacts(
+    monkeypatch, tmp_path: Path
+) -> None:
+    command: list[str] = []
+
+    def empty_download(args, **kwargs):
+        command.extend(args)
+        output_name = args[args.index("--file-name") + 1]
+        (tmp_path / f"{output_name}.csv").touch()
+        return CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setattr(downloader.subprocess, "run", empty_download)
+    frame = downloader._download_csv(
+        "gbpcad",
+        "bid",
+        date(2010, 1, 2),
+        date(2010, 1, 3),
+        tmp_path,
+        npx="npx",
+        package_version="1.51.0",
+        retries=0,
+        batch_size=10,
+        timeout=30,
+    )
+
+    assert "--retry-on-empty" in command
+    assert "--no-fail-after-retries" in command
+    assert frame.empty
+    assert tuple(frame.columns) == downloader.REQUIRED_COLUMNS
+
+
+def test_empty_range_creates_readable_h5_and_can_later_be_extended(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(downloader.shutil, "which", lambda _: "/usr/bin/npx")
+    monkeypatch.setattr(
+        downloader,
+        "_download_csv",
+        lambda symbol, side, start, end, destination, **kwargs: pd.DataFrame(
+            columns=downloader.REQUIRED_COLUMNS
+        ),
+    )
+    target = tmp_path / "gbpcad.h5"
+
+    empty = downloader.download_h5(
+        "gbpcad", "2010-01-02", "2010-01-03", target, progress=False
+    )
+    bid, ask = pd.read_hdf(target, "m1/bid"), pd.read_hdf(target, "m1/ask")
+    assert empty.rows_bid == empty.rows_ask == 0
+    assert bid.empty and ask.empty
+
+    monkeypatch.setattr(
+        downloader,
+        "_download_csv",
+        lambda symbol, side, start, end, destination, **kwargs: _frame(
+            start.isoformat()
+        ),
+    )
+    extended = downloader.download_h5(
+        "gbpcad", "2010-01-02", "2010-01-04", target, progress=False
+    )
+    assert extended.rows_bid == extended.rows_ask == 3
+    assert pd.read_hdf(target, "m1/bid").shape == (3, 6)
 
 
 @pytest.mark.parametrize(
